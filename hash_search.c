@@ -78,9 +78,9 @@ int get_value(char *argv[], unsigned char *s){
 int main(int argc, char *argv[]){
 
 	unsigned char *s;
-	unsigned int *new_byte;
+	unsigned long long *new_byte;
 	int L, bits, count = 0;
-	unsigned int max_search;
+	unsigned long long max_search;
 	char buf[SIZE];
 	unsigned char result[16];
 	MD5_CTX *md5_state, *dup_md5_state;
@@ -99,16 +99,24 @@ int main(int argc, char *argv[]){
 
 	/* and see how long to search */
 	if (argc > 2) {
-		max_search = (1 << atol(argv[2])) - 1;
-	}
-	else {
+		unsigned int shift = atol(argv[2]);
+		if (shift >= 1 && shift <= 63)
+			max_search = ((unsigned long long)1 << shift) - 1;
+		else if (shift == 64)
+			max_search = (unsigned long long)-1;
+		else {
+			fprintf(stderr, "invalid number of bits: %s\n", argv[2]);
+			exit(1);
+		}
+
+	} else {
 		max_search = 256*256*256;
 	}
 
 	/* allocate memory for hash state */
 	md5_state = (MD5_CTX *)malloc(sizeof(MD5_CTX));
 	dup_md5_state = (MD5_CTX *)malloc(sizeof(MD5_CTX));
-	new_byte = (unsigned int *)malloc(sizeof(unsigned int *));
+	new_byte = (unsigned long long *)malloc(sizeof(unsigned long long *));
 
 	/* initialize hash */
 	MD5_Init(md5_state);
@@ -137,13 +145,9 @@ int main(int argc, char *argv[]){
 	MD5_Final(result, md5_state);
 	print_result(stderr, result);
 	RESTORE_STATE;
-	fprintf(stderr, ")\nsearching 0 to 0x%x ... ", max_search);
+	fprintf(stderr, ")\nsearching 0 to %#llx ... ", max_search);
 
 	/* do the search */
-	/* (It would be good to extend this to allow searches of
-	 * more than 32 bits.  Maybe a long long, which is still
-	 * at the high end of distributed computing brute force
-	 * searches?) */
 	for (*new_byte = 0; *new_byte < max_search; (*new_byte)++){
 		SAVE_STATE;
 
@@ -164,7 +168,7 @@ int main(int argc, char *argv[]){
 			} else {
 				/* goal is to display all possible matches */
 				print_result(stdout, result);
-				fprintf(stdout, " bytes %08x\n", *new_byte);
+				fprintf(stdout, " bytes %#llx\n", *new_byte);
 			}
 			}
 		}
