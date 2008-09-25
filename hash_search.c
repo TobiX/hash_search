@@ -20,6 +20,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <stdlib.h>
 #include <unistd.h>
 
 /* block size for file reads */
@@ -47,7 +48,7 @@ size_t reliable_write(int fd, void *buf, size_t count){
 	while (count) {
 		temp = write(fd, buf, count);
 		if (count - temp){
-			buf += temp;
+			buf = (char*)buf + temp;
 		}
 		count -= temp;
 	}
@@ -55,8 +56,8 @@ size_t reliable_write(int fd, void *buf, size_t count){
 	return orig;
 }
 
-int get_value(int argc, char *argv[], unsigned char *s){
-	int n = 0;
+int get_value(char *argv[], unsigned char *s){
+	unsigned int n = 0;
 	unsigned int blah; /* %x conversion requires int */
 
 	while ( n < strlen(argv[1]) ) {
@@ -76,12 +77,12 @@ int get_value(int argc, char *argv[], unsigned char *s){
 
 int main(int argc, char *argv[]){
 
-	char *s;
-	int *new_byte;
-	int L, bits, count, i;
-	unsigned long MAX_SEARCH;
+	unsigned char *s;
+	unsigned int *new_byte;
+	int L, bits, count = 0;
+	unsigned int max_search;
 	char buf[SIZE];
-	char result[16];
+	unsigned char result[16];
 	MD5_CTX *md5_state, *dup_md5_state;
 	ssize_t n;
 
@@ -93,21 +94,21 @@ int main(int argc, char *argv[]){
 	L = strlen(argv[1]);
 
 	/* find out what we're searching for */
-	s = (char *)malloc((L+1)/2+1);
-	bits = get_value(argc, argv, s);
+	s = (unsigned char *)malloc((L+1)/2+1);
+	bits = get_value(argv, s);
 
 	/* and see how long to search */
 	if (argc > 2) {
-		MAX_SEARCH = (1 << atol(argv[2])) - 1;
+		max_search = (1 << atol(argv[2])) - 1;
 	}
 	else {
-		MAX_SEARCH = 256*256*256;
+		max_search = 256*256*256;
 	}
 
 	/* allocate memory for hash state */
 	md5_state = (MD5_CTX *)malloc(sizeof(MD5_CTX));
 	dup_md5_state = (MD5_CTX *)malloc(sizeof(MD5_CTX));
-	new_byte = (int *)malloc(sizeof(int));
+	new_byte = (unsigned int *)malloc(sizeof(unsigned int *));
 
 	/* initialize hash */
 	MD5_Init(md5_state);
@@ -116,12 +117,12 @@ int main(int argc, char *argv[]){
 	fprintf(stderr, "reading file to hash from stdin...");
 	if (isatty(0)){
 		fprintf(stderr, "\n");
-		while (n = read(0, buf, SIZE)) {
+		while ((n = read(0, buf, SIZE))) {
 			MD5_Update(md5_state, buf, n);
 			if (make_matching) reliable_write(1, buf, n);
 		}
 	} else {
-		while (n = read(0, buf, SIZE)) {
+		while ((n = read(0, buf, SIZE))) {
 			MD5_Update(md5_state, buf, n);
 			if (make_matching) reliable_write(1, buf, n);
 			/* progress indicator */
@@ -136,14 +137,14 @@ int main(int argc, char *argv[]){
 	MD5_Final(result, md5_state);
 	print_result(stderr, result);
 	RESTORE_STATE;
-	fprintf(stderr, ")\nsearching 0 to 0x%x ... ", MAX_SEARCH);
+	fprintf(stderr, ")\nsearching 0 to 0x%x ... ", max_search);
 
 	/* do the search */
 	/* (It would be good to extend this to allow searches of
 	 * more than 32 bits.  Maybe a long long, which is still
 	 * at the high end of distributed computing brute force
 	 * searches?) */
-	for (*new_byte=0; *new_byte<MAX_SEARCH; (*new_byte)++){
+	for (*new_byte = 0; *new_byte < max_search; (*new_byte)++){
 		SAVE_STATE;
 
 		MD5_Update(md5_state, (char *)new_byte, sizeof(int));
