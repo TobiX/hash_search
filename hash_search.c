@@ -15,11 +15,8 @@
  * Thanks to Aaron Swartz for testing on ppc.  Seemingly endian-safe. */
 
 #include <openssl/md5.h>
-#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 #include <stdlib.h>
 #include <unistd.h>
 
@@ -29,11 +26,13 @@
 #define SAVE_STATE memcpy(dup_md5_state, md5_state, sizeof(MD5_CTX))
 #define RESTORE_STATE memcpy(md5_state, dup_md5_state, sizeof(MD5_CTX))
 
-/* This should be a command-line option.  If make_matching is 1, the
- * program outputs a matching file on stdout.  If make_matching is 0,
- * the program instead outputs a list of potential matches (mainly useful
- * for speed testing or debugging). */
-#define make_matching 1
+void usage(int ret)
+{
+	fputs("usage: hash_search [-b <bits>] [-l] hexdigits\n"
+			"\t-b <bits>  number of bits to search (default: 24)\n"
+			"\t-l         just list all possible matches, don't output modified file\n", stderr);
+	exit(ret);
+}
 
 void print_result(FILE *f, unsigned char *result){
 	int i;
@@ -56,22 +55,22 @@ size_t reliable_write(int fd, void *buf, size_t count){
 	return orig;
 }
 
-int get_value(char *argv[], unsigned char *s){
+int get_value(char *str, unsigned char *s){
 	unsigned int n = 0;
 	unsigned int blah; /* %x conversion requires int */
 
-	while ( n < strlen(argv[1]) ) {
-		sscanf(argv[1] + n, "%2x", &blah);
+	while ( n < strlen(str) ) {
+		sscanf(str + n, "%2x", &blah);
 		s[n/2] = (char) blah ;
 		n += 2;
 	};
 
 	/* single hex digit if total hex digits is odd */
-	if (strlen(argv[1]) % 2){
+	if (strlen(str) % 2){
 		s[(n-2)/2] <<= 4;
 	}
 
-	return 4 * strlen(argv[1]);
+	return 4 * strlen(str);
 
 }
 
@@ -79,39 +78,43 @@ int main(int argc, char *argv[]){
 
 	unsigned char *s;
 	unsigned long long *new_byte;
-	int L, bits, count = 0;
-	unsigned long long max_search;
+	int L, bits, ch, shift, count = 0;
+	unsigned long long max_search = 1 << 24;
 	char buf[SIZE];
+	char make_matching = 1;
 	unsigned char result[16];
 	MD5_CTX *md5_state, *dup_md5_state;
 	ssize_t n;
 
-	if (argc < 2){
-		fprintf(stderr, "usage: %s hexdigits [bits]\n", argv[0]);
-		exit(1);
+	while ((ch = getopt(argc, argv, "b:l")) != -1) {
+		switch (ch) {
+			case 'b':
+				shift = atol(optarg);
+				if (shift >= 1 && shift <= 63)
+					max_search = ((unsigned long long)1 << shift) - 1;
+				else if (shift == 64)
+					max_search = (unsigned long long)-1;
+				else {
+					fprintf(stderr, "invalid number of bits: %s\n", optarg);
+					usage(1);
+				}
+				break;
+			case 'l':
+				make_matching = 0;
+				break;
+				/* case '?': - unknown options */
+			default:
+				usage(1);
+		}
 	}
 
-	L = strlen(argv[1]);
+	if (argc - optind != 1) usage(1);
+
+	L = strlen(argv[optind]);
 
 	/* find out what we're searching for */
 	s = (unsigned char *)malloc((L+1)/2+1);
-	bits = get_value(argv, s);
-
-	/* and see how long to search */
-	if (argc > 2) {
-		unsigned int shift = atol(argv[2]);
-		if (shift >= 1 && shift <= 63)
-			max_search = ((unsigned long long)1 << shift) - 1;
-		else if (shift == 64)
-			max_search = (unsigned long long)-1;
-		else {
-			fprintf(stderr, "invalid number of bits: %s\n", argv[2]);
-			exit(1);
-		}
-
-	} else {
-		max_search = 256*256*256;
-	}
+	bits = get_value(argv[optind], s);
 
 	/* allocate memory for hash state */
 	md5_state = (MD5_CTX *)malloc(sizeof(MD5_CTX));
