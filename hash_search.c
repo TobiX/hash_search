@@ -154,15 +154,14 @@ int main(int argc, char *argv[]){
 
 	/* announce the start of the search */
 	fprintf(stderr, "beginning search (original hash = ");
-	EVP_MD_CTX_copy(&dup_hash_state, &hash_state);
+	EVP_MD_CTX_copy_ex(&dup_hash_state, &hash_state);
 	EVP_DigestFinal_ex(&dup_hash_state, result, &result_len);
 	print_result(stderr, result, result_len);
-	EVP_MD_CTX_cleanup(&dup_hash_state);
 	fprintf(stderr, ")\nsearching 0 to %#llx ... ", max_search);
 
 	/* do the search */
 	for (new_bytes = 0; new_bytes < max_search; new_bytes++){
-		EVP_MD_CTX_copy(&dup_hash_state, &hash_state);
+		EVP_MD_CTX_copy_ex(&dup_hash_state, &hash_state);
 
 		EVP_DigestUpdate(&dup_hash_state, (char *)&new_bytes, sizeof(new_bytes));
 		EVP_DigestFinal_ex(&dup_hash_state, result, &result_len);
@@ -186,11 +185,12 @@ int main(int argc, char *argv[]){
 			}
 		}
 
-		EVP_MD_CTX_cleanup(&dup_hash_state);
+
 	}
 
 	/* free memory */
 	EVP_MD_CTX_cleanup(&hash_state);
+	EVP_MD_CTX_cleanup(&dup_hash_state);
 	free(s);
 
 	if (make_matching) fprintf(stderr, "no match found.\n");
