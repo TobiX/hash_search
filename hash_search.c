@@ -4,7 +4,7 @@
  * link with -lcrypto   (use libcrypto, supplied by OpenSSL)
  * 
  * Copyright (C) 2003, Seth Schoen
- * Copyright (C) 2008, Tobias Gruetzmacher
+ * Copyright (C) 2008, 2014 Tobias Gruetzmacher
  *
  * Permission is granted to any person obtaining a copy of this program
  * to deal in the program without restriction.
@@ -76,7 +76,7 @@ int get_value(char *str, unsigned char *s){
 int main(int argc, char *argv[]){
 
 	unsigned char *s;
-	unsigned long long *new_byte;
+	unsigned long long new_bytes;
 	int L, bits, ch, shift, count = 0;
 	unsigned long long max_search = 1 << 24;
 	char buf[SIZE], make_matching = 1;
@@ -129,7 +129,6 @@ int main(int argc, char *argv[]){
 	/* allocate memory for hash state */
 	EVP_MD_CTX_init(&hash_state);
 	EVP_MD_CTX_init(&dup_hash_state);
-	new_byte = (unsigned long long *)malloc(sizeof(unsigned long long *));
 
 	/* initialize hash */
 	EVP_DigestInit_ex(&hash_state, md, NULL);
@@ -162,10 +161,10 @@ int main(int argc, char *argv[]){
 	fprintf(stderr, ")\nsearching 0 to %#llx ... ", max_search);
 
 	/* do the search */
-	for (*new_byte = 0; *new_byte < max_search; (*new_byte)++){
+	for (new_bytes = 0; new_bytes < max_search; new_bytes++){
 		EVP_MD_CTX_copy(&dup_hash_state, &hash_state);
 
-		EVP_DigestUpdate(&dup_hash_state, (char *)new_byte, sizeof(int));
+		EVP_DigestUpdate(&dup_hash_state, (char *)&new_bytes, sizeof(new_bytes));
 		EVP_DigestFinal_ex(&dup_hash_state, result, &result_len);
 		if (!memcmp(result, s, bits/8)) {
 			/* just one last nibble? */
@@ -176,13 +175,13 @@ int main(int argc, char *argv[]){
 				fprintf(stderr, "new hash is ");
 				print_result(stderr, result, result_len);
 				fprintf(stderr, "\n");
-				reliable_write(1, new_byte, 4);
+				reliable_write(1, &new_bytes, sizeof(new_bytes));
 				close(1);
 				exit(0);
 			} else {
 				/* goal is to display all possible matches */
 				print_result(stdout, result, result_len);
-				fprintf(stdout, " bytes %#llx\n", *new_byte);
+				fprintf(stdout, " bytes %#llx\n", new_bytes);
 			}
 			}
 		}
