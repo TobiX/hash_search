@@ -20,6 +20,9 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 /* block size for file reads */
 #define SIZE 16384
@@ -157,35 +160,42 @@ int main(int argc, char *argv[]){
 	EVP_MD_CTX_copy_ex(&dup_hash_state, &hash_state);
 	EVP_DigestFinal_ex(&dup_hash_state, result, &result_len);
 	print_result(stderr, result, result_len);
-	fprintf(stderr, ")\nsearching 0 to %#llx ... ", max_search);
+	fprintf(stderr, ")\nsearching 0 to %#llx...\n", max_search);
 
 	/* do the search */
-	for (new_bytes = 0; new_bytes < max_search; new_bytes++){
-		EVP_MD_CTX_copy_ex(&dup_hash_state, &hash_state);
+	#pragma omp parallel
+	{
+#ifdef _OPENMP
+		if (omp_get_thread_num() == 0)
+			fprintf(stderr, "Using %i threads for search.\n", omp_get_num_threads());
+#endif
 
-		EVP_DigestUpdate(&dup_hash_state, (char *)&new_bytes, sizeof(new_bytes));
-		EVP_DigestFinal_ex(&dup_hash_state, result, &result_len);
-		if (!memcmp(result, s, bits/8)) {
-			/* just one last nibble? */
-			if ((bits%8 == 0) || ((result[bits/8] & 0xf0) == (s[bits/8] & 0xf0))){
-			if (make_matching) {
-				/* goal is to output an actual matching file */
-				fprintf(stderr, "found match!\n");
-				fprintf(stderr, "new hash is ");
-				print_result(stderr, result, result_len);
-				fprintf(stderr, "\n");
-				reliable_write(1, &new_bytes, sizeof(new_bytes));
-				close(1);
-				exit(0);
-			} else {
-				/* goal is to display all possible matches */
-				print_result(stdout, result, result_len);
-				fprintf(stdout, " bytes %#llx\n", new_bytes);
-			}
+		#pragma omp for schedule(static) firstprivate(dup_hash_state) private(result,result_len)
+		for (new_bytes = 0; new_bytes < max_search; new_bytes++){
+			EVP_MD_CTX_copy_ex(&dup_hash_state, &hash_state);
+
+			EVP_DigestUpdate(&dup_hash_state, (char *)&new_bytes, sizeof(new_bytes));
+			EVP_DigestFinal_ex(&dup_hash_state, result, &result_len);
+			if (!memcmp(result, s, bits/8)) {
+				/* just one last nibble? */
+				if ((bits%8 == 0) || ((result[bits/8] & 0xf0) == (s[bits/8] & 0xf0))){
+					if (make_matching) {
+						/* goal is to output an actual matching file */
+						fprintf(stderr, "found match!\n");
+						fprintf(stderr, "new hash is ");
+						print_result(stderr, result, result_len);
+						fprintf(stderr, "\n");
+						reliable_write(1, &new_bytes, sizeof(new_bytes));
+						close(1);
+						exit(0);
+					} else {
+						/* goal is to display all possible matches */
+						print_result(stdout, result, result_len);
+						fprintf(stdout, " bytes %#llx\n", new_bytes);
+					}
+				}
 			}
 		}
-
-
 	}
 
 	/* free memory */

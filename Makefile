@@ -1,7 +1,13 @@
 
+OPENMP := yes
 CC := gcc
 CFLAGS := -g -Wall -W -pedantic -std=gnu99 -Werror=implicit -O2
 LIBS := -lcrypto
+
+ifeq ($(OPENMP),yes)
+	CFLAGS += -fopenmp
+	LDFLAGS += -fopenmp
+endif
 
 all: hash_search
 
