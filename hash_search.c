@@ -133,7 +133,6 @@ int main(int argc, char *argv[]){
 
 	/* allocate memory for hash state */
 	EVP_MD_CTX_init(&hash_state);
-	EVP_MD_CTX_init(&dup_hash_state);
 
 	/* initialize hash */
 	EVP_DigestInit_ex(&hash_state, md, NULL);
@@ -158,23 +157,26 @@ int main(int argc, char *argv[]){
 
 	/* announce the start of the search */
 	fprintf(stderr, "beginning search (original hash = ");
-	EVP_MD_CTX_copy_ex(&dup_hash_state, &hash_state);
+	EVP_MD_CTX_copy(&dup_hash_state, &hash_state);
 	EVP_DigestFinal_ex(&dup_hash_state, result, &result_len);
+	EVP_MD_CTX_cleanup(&dup_hash_state);
 	print_result(stderr, result, result_len);
 	fprintf(stderr, ")\nsearching 0 to %#llx...\n", max_search);
 
 	/* do the search */
-	#pragma omp parallel
+	#pragma omp parallel private(dup_hash_state)
 	{
 #ifdef _OPENMP
 		if (omp_get_thread_num() == 0)
 			fprintf(stderr, "Using %i threads for search.\n", omp_get_num_threads());
 #endif
 
+		EVP_MD_CTX_init(&dup_hash_state);
+
 		char * data = malloc(LONGLONGSTR);
 		size_t datalen;
 
-		#pragma omp for schedule(static) firstprivate(dup_hash_state) private(result,result_len)
+		#pragma omp for schedule(static) private(result,result_len)
 		for (new_bytes = 0; new_bytes < max_search; new_bytes++){
 			EVP_MD_CTX_copy_ex(&dup_hash_state, &hash_state);
 
@@ -203,12 +205,12 @@ int main(int argc, char *argv[]){
 			}
 		}
 
+		EVP_MD_CTX_cleanup(&dup_hash_state);
 		free(data);
 	}
 
 	/* free memory */
 	EVP_MD_CTX_cleanup(&hash_state);
-	EVP_MD_CTX_cleanup(&dup_hash_state);
 	free(s);
 
 	if (make_matching) fprintf(stderr, "no match found.\n");
