@@ -26,6 +26,8 @@
 
 /* block size for file reads */
 #define SIZE 16384
+/* maximum length of a formatted unsigned long long + \0 */
+#define LONGLONGSTR 21
 
 void usage(int ret)
 {
@@ -169,32 +171,39 @@ int main(int argc, char *argv[]){
 			fprintf(stderr, "Using %i threads for search.\n", omp_get_num_threads());
 #endif
 
+		char * data = malloc(LONGLONGSTR);
+		size_t datalen;
+
 		#pragma omp for schedule(static) firstprivate(dup_hash_state) private(result,result_len)
 		for (new_bytes = 0; new_bytes < max_search; new_bytes++){
 			EVP_MD_CTX_copy_ex(&dup_hash_state, &hash_state);
 
-			EVP_DigestUpdate(&dup_hash_state, (char *)&new_bytes, sizeof(new_bytes));
+			datalen = snprintf(data, LONGLONGSTR, "%lli", new_bytes);
+			EVP_DigestUpdate(&dup_hash_state, data, datalen);
 			EVP_DigestFinal_ex(&dup_hash_state, result, &result_len);
 			if (!memcmp(result, s, bits/8)) {
 				/* just one last nibble? */
 				if ((bits%8 == 0) || ((result[bits/8] & 0xf0) == (s[bits/8] & 0xf0))){
+					#pragma omp critical
 					if (make_matching) {
 						/* goal is to output an actual matching file */
 						fprintf(stderr, "found match!\n");
 						fprintf(stderr, "new hash is ");
 						print_result(stderr, result, result_len);
 						fprintf(stderr, "\n");
-						reliable_write(1, &new_bytes, sizeof(new_bytes));
+						reliable_write(1, data, datalen);
 						close(1);
 						exit(0);
 					} else {
 						/* goal is to display all possible matches */
 						print_result(stdout, result, result_len);
-						fprintf(stdout, " bytes %#llx\n", new_bytes);
+						fprintf(stdout, " ascii %lli\n", new_bytes);
 					}
 				}
 			}
 		}
+
+		free(data);
 	}
 
 	/* free memory */
