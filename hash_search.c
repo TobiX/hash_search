@@ -4,7 +4,7 @@
  * link with -lcrypto   (use libcrypto, supplied by OpenSSL)
  * 
  * Copyright (C) 2003, Seth Schoen
- * Copyright (C) 2008, 2014 Tobias Gruetzmacher
+ * Copyright (C) 2008, 2015 Tobias Gruetzmacher
  *
  * Permission is granted to any person obtaining a copy of this program
  * to deal in the program without restriction.
@@ -135,7 +135,6 @@ int main(int argc, char *argv[]){
 
 	/* initialize hash */
 	EVP_DigestInit_ex(&hash_state, md, NULL);
-	EVP_DigestInit_ex(&dup_hash_state, md, NULL);
 
 	/* hash the existing file */
 	fprintf(stderr, "reading file to hash from stdin...");
