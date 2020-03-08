@@ -107,11 +107,11 @@ int main(int argc, char *argv[]){
 			case 'd':
 				md = EVP_get_digestbyname(optarg);
 
-				if(!md) {
+				if (!md) {
 					printf("Unknown message digest %s\n", optarg);
 					usage(1);
 				}
-
+				break;
 			case 'l':
 				make_matching = 0;
 				break;
