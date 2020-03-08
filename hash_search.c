@@ -1,10 +1,8 @@
 /* hash_search.c: partially reverse MD5 or other hashes by finding bytes to add
  * to an existing file so that its MD5 hash begin with a specified prefix
  *
- * link with -lcrypto   (use libcrypto, supplied by OpenSSL)
- * 
  * Copyright (C) 2003, Seth Schoen
- * Copyright (C) 2008, 2015 Tobias Gruetzmacher
+ * Copyright (C) 2008, 2015, 2020 Tobias Gruetzmacher
  *
  * Permission is granted to any person obtaining a copy of this program
  * to deal in the program without restriction.
@@ -87,7 +85,7 @@ int main(int argc, char *argv[]){
 	char buf[SIZE], make_matching = 1;
 	unsigned char result[EVP_MAX_MD_SIZE];
 	unsigned int result_len;
-	EVP_MD_CTX hash_state, dup_hash_state;
+	EVP_MD_CTX *hash_state, *dup_hash_state;
 	const EVP_MD *md = EVP_md5();
 	ssize_t n;
 
@@ -132,22 +130,22 @@ int main(int argc, char *argv[]){
 	bits = get_value(argv[optind], s);
 
 	/* allocate memory for hash state */
-	EVP_MD_CTX_init(&hash_state);
+	hash_state = EVP_MD_CTX_new();
 
 	/* initialize hash */
-	EVP_DigestInit_ex(&hash_state, md, NULL);
+	EVP_DigestInit_ex(hash_state, md, NULL);
 
 	/* hash the existing file */
 	fprintf(stderr, "reading file to hash from stdin...");
 	if (isatty(0)){
 		fprintf(stderr, "\n");
 		while ((n = read(0, buf, SIZE))) {
-			EVP_DigestUpdate(&hash_state, buf, n);
+			EVP_DigestUpdate(hash_state, buf, n);
 			if (make_matching) reliable_write(1, buf, n);
 		}
 	} else {
 		while ((n = read(0, buf, SIZE))) {
-			EVP_DigestUpdate(&hash_state, buf, n);
+			EVP_DigestUpdate(hash_state, buf, n);
 			if (make_matching) reliable_write(1, buf, n);
 			/* progress indicator */
 			if (!((count++)%256)) fprintf(stderr, ".");
@@ -157,32 +155,33 @@ int main(int argc, char *argv[]){
 
 	/* announce the start of the search */
 	fprintf(stderr, "beginning search (original hash = ");
-	EVP_MD_CTX_copy(&dup_hash_state, &hash_state);
-	EVP_DigestFinal_ex(&dup_hash_state, result, &result_len);
-	EVP_MD_CTX_cleanup(&dup_hash_state);
+	dup_hash_state = EVP_MD_CTX_new();
+	EVP_MD_CTX_copy_ex(dup_hash_state, hash_state);
+	EVP_DigestFinal_ex(dup_hash_state, result, &result_len);
+	EVP_MD_CTX_free(dup_hash_state);
 	print_result(stderr, result, result_len);
 	fprintf(stderr, ")\nsearching 0 to %#llx...\n", max_search);
 
 	/* do the search */
-	#pragma omp parallel private(dup_hash_state)
+	#pragma omp parallel
 	{
 #ifdef _OPENMP
 		if (omp_get_thread_num() == 0)
 			fprintf(stderr, "Using %i threads for search.\n", omp_get_num_threads());
 #endif
 
-		EVP_MD_CTX_init(&dup_hash_state);
+		EVP_MD_CTX *final_state = EVP_MD_CTX_new();
 
 		char * data = malloc(LONGLONGSTR);
 		size_t datalen;
 
 		#pragma omp for schedule(static) private(result,result_len)
 		for (new_bytes = 0; new_bytes < max_search; new_bytes++){
-			EVP_MD_CTX_copy_ex(&dup_hash_state, &hash_state);
+			EVP_MD_CTX_copy_ex(final_state, hash_state);
 
 			datalen = snprintf(data, LONGLONGSTR, "%lli", new_bytes);
-			EVP_DigestUpdate(&dup_hash_state, data, datalen);
-			EVP_DigestFinal_ex(&dup_hash_state, result, &result_len);
+			EVP_DigestUpdate(final_state, data, datalen);
+			EVP_DigestFinal_ex(final_state, result, &result_len);
 			if (!memcmp(result, s, bits/8)) {
 				/* just one last nibble? */
 				if ((bits%8 == 0) || ((result[bits/8] & 0xf0) == (s[bits/8] & 0xf0))){
@@ -205,12 +204,12 @@ int main(int argc, char *argv[]){
 			}
 		}
 
-		EVP_MD_CTX_cleanup(&dup_hash_state);
+		EVP_MD_CTX_free(final_state);
 		free(data);
 	}
 
 	/* free memory */
-	EVP_MD_CTX_cleanup(&hash_state);
+	EVP_MD_CTX_free(hash_state);
 	free(s);
 
 	if (make_matching) fprintf(stderr, "no match found.\n");
